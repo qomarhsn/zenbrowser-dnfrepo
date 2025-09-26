@@ -322,16 +322,19 @@ jobs:
       # Deploy to GitHub Pages
       # ------------------------------------------------------------
       - name: Setup Pages
+        if: steps.check.outputs.no_change == 'false'
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
       - name: Upload Pages artifact
+        if: steps.check.outputs.no_change == 'false'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ${{ env.PAGES_DIR }}
 
       - name: Deploy to GitHub Pages
+        if: steps.check.outputs.no_change == 'false'
         id: deploy
         uses: actions/deploy-pages@v4
 
