@@ -30,6 +30,8 @@ jobs:
     name: Build RPMs, update DNF repo, and release
     runs-on: ubuntu-latest
     container: fedora:42
+    outputs:
+      new_release: ${{ steps.check.outputs.no_change == 'false' }}
     env:
       CURRENT_ARCH: x86_64
 
@@ -377,37 +379,47 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ------------------------------------------------------------
-      # Update last_built_version.txt and push to default branch
-      # ------------------------------------------------------------
+  # ------------------------------------------------------------
+  # Update last_built_version.txt (separate job on Ubuntu host)
+  # ------------------------------------------------------------
+  update-version:
+    name: Update last built version
+    runs-on: ubuntu-latest
+    needs: build-and-deploy
+    if: needs.build-and-deploy.outputs.new_release == 'true'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Update last_built_version.txt
-        if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
-          latest="${{ steps.latest.outputs.tag }}"
+          # Get the tag from the build job (we'll pass it as output)
+          latest=$(gh api repos/zen-browser/desktop/releases/latest --jq '.tag_name')
           echo "$latest" > last_built_version.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Commit and push last_built_version.txt
-        if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add last_built_version.txt
           if ! git diff --cached --quiet; then
-            git commit -m "chore: update last_built_version.txt to ${{ steps.latest.outputs.tag }}"
+            latest=$(gh api repos/zen-browser/desktop/releases/latest --jq '.tag_name')
+            git commit -m "chore: update last_built_version.txt to $latest"
             # Pull latest changes and rebase our commit on top
             git pull --rebase origin main || true
             git push
           else
             echo "No changes to commit."
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ------------------------------------------------------------
-      # Summary when nothing to do
-      # ------------------------------------------------------------
-      - name: No-op summary
-        if: steps.check.outputs.no_change == 'true'
-        run: |
-          echo "No new upstream release. Exiting."
 
