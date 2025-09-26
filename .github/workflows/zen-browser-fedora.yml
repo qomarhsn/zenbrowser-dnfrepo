@@ -200,7 +200,7 @@ jobs:
           Source2:        zen-browser-launcher.sh
 
           BuildArch:      BUILDARCH_PLACEHOLDER
-          Requires:       /usr/bin/env
+          Requires:       /bin/bash
 
           %description
           Zen Browser (Firefork) packaged for Fedora. Installs under /opt/zen-browser and provides /usr/bin/zen symlink.
@@ -250,7 +250,7 @@ jobs:
           %{_datadir}/applications/zen-browser.desktop
 
           %changelog
-          * Fri Sep 26 2025 GitHub Actions <actions@github.com> - RPM_VERSION_PLACEHOLDER-1
+          * Thu Sep 26 2024 GitHub Actions <actions@github.com> - RPM_VERSION_PLACEHOLDER-1
           - Automated build from upstream release.
 
           EOF
