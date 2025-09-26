@@ -396,6 +396,8 @@ jobs:
           git add last_built_version.txt
           if ! git diff --cached --quiet; then
             git commit -m "chore: update last_built_version.txt to ${{ steps.latest.outputs.tag }}"
+            # Pull latest changes and rebase our commit on top
+            git pull --rebase origin main || true
             git push
           else
             echo "No changes to commit."
