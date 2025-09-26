@@ -1,0 +1,409 @@
+name: Build Fedora DNF repo for Zen Browser
+
+on:
+  # Manual trigger support
+  workflow_dispatch: {}
+
+  # Scheduled: Every Friday 6 AM Asia/Dhaka (UTC+6) = 00:00 UTC on Friday
+  schedule:
+    - cron: "0 0 * * 5"
+
+permissions:
+  contents: write          # needed to push last_built_version.txt and create releases
+  pages: write             # needed to deploy to GitHub Pages
+  id-token: write          # needed by actions/deploy-pages
+
+env:
+  REPO_OWNER: ${{ github.repository_owner }}
+  REPO_NAME: ${{ github.event.repository.name }}
+  PAGES_DIR: public                  # directory that will be published to GitHub Pages
+  DNF_REPO_NAME: zen-browser         # name used in .repo instructions
+  UPSTREAM_REPO: zen-browser/desktop # upstream to poll for latest releases
+  ARCHS: "x86_64 aarch64"            # arches to build
+  PACKAGE_NAME: zen-browser          # RPM name
+  INSTALL_PREFIX: /opt/zen-browser   # install location inside the RPM
+  BIN_SYMLINK: /usr/bin/zen          # symlink for convenience
+  CUSTOM_DOMAIN: zenbrowser-dnfrepo.qomarhsn.com
+
+jobs:
+  build-and-deploy:
+    name: Build RPMs, update DNF repo, and release
+    runs-on: ubuntu-latest
+
+    steps:
+      # ------------------------------------------------------------
+      # Checkout repository (we will read/write last_built_version.txt)
+      # ------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ------------------------------------------------------------
+      # Install dependencies required for RPM building and repo metadata
+      # ------------------------------------------------------------
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq rpm createrepo-c xz-utils
+
+      # ------------------------------------------------------------
+      # Get latest upstream release tag from GitHub API
+      # ------------------------------------------------------------
+      - name: Fetch latest Zen Browser upstream release
+        id: latest
+        run: |
+          set -euo pipefail
+          api_url="https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest"
+          json=$(curl -fsSL "$api_url")
+          tag=$(echo "$json" | jq -r '.tag_name')
+          # Normalize tag if needed; we keep as-is to match upstream asset naming and for the RPM version
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # Store the JSON for later consumption (links, notes, etc.)
+          echo "$json" > upstream_latest.json
+
+      # ------------------------------------------------------------
+      # Compare with last built version (if same -> skip subsequent work)
+      # ------------------------------------------------------------
+      - name: Determine if rebuild is needed
+        id: check
+        run: |
+          set -euo pipefail
+          latest="${{ steps.latest.outputs.tag }}"
+          if [ -f last_built_version.txt ]; then
+            built=$(cat last_built_version.txt | tr -d ' \t\r\n')
+          else
+            built=""
+          fi
+          echo "Last built: '${built}'"
+          echo "Latest upstream: '${latest}'"
+          if [ -n "$built" ] && [ "$built" = "$latest" ]; then
+            echo "no_change=true" >> "$GITHUB_OUTPUT"
+            echo "No new release. Skipping build."
+          else
+            echo "no_change=false" >> "$GITHUB_OUTPUT"
+            echo "New release detected."
+          fi
+
+      # ------------------------------------------------------------
+      # Prepare rpmbuild tree and download upstream binaries per arch
+      # ------------------------------------------------------------
+      - name: Prepare build workspace
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p work/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          mkdir -p "$PAGES_DIR"
+          # Snapshot the latest tag for scripting
+          echo "${{ steps.latest.outputs.tag }}" > work/LATEST_TAG
+
+      - name: Download upstream tarballs for all architectures
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          # Resolve exact asset download URLs from the upstream_latest.json to avoid tag prefix issues
+          for arch in $ARCHS; do
+            case "$arch" in
+              x86_64) asset="zen.linux-x86_64.tar.xz" ;;
+              aarch64) asset="zen.linux-aarch64.tar.xz" ;;
+              *) echo "Unsupported arch: $arch" && exit 1 ;;
+            esac
+            url=$(jq -r --arg name "$asset" '.assets[] | select(.name==$name) | .browser_download_url' upstream_latest.json)
+            if [ -z "$url" ] || [ "$url" = "null" ]; then
+              echo "Failed to find asset URL for $asset in upstream release. Available assets:" >&2
+              jq -r '.assets[].name' upstream_latest.json >&2
+              exit 1
+            fi
+            echo "Downloading $url"
+            curl -fL "$url" -o "work/rpmbuild/SOURCES/${asset}"
+            # Basic validation
+            file "work/rpmbuild/SOURCES/${asset}" || true
+            ls -l "work/rpmbuild/SOURCES/${asset}"
+          done
+
+      # ------------------------------------------------------------
+      # Create a single spec template and build per-arch via --target
+      # This spec:
+      # - Installs Zen into /opt/zen-browser/
+      # - Creates /usr/bin/zen symlink
+      # - Uses upstream tag as version (strip leading 'v' for RPM version)
+      # ------------------------------------------------------------
+      - name: Create desktop/launcher and RPM spec file
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          latest_tag=$(cat work/LATEST_TAG)
+          # RPM version cannot start with 'v' typically; convert 'v1.2.3' -> '1.2.3'
+          rpm_version="${latest_tag#v}"
+
+          # Create desktop entry
+          cat > work/rpmbuild/SOURCES/zen-browser.desktop << 'DESK'
+          [Desktop Entry]
+          Version=1.0
+          Name=Zen Browser
+          GenericName=Web Browser
+          Comment=Experience tranquillity while browsing the web without people tracking you!
+          Exec=zen %u
+          StartupWMClass=zen
+          Icon=zen-browser
+          Terminal=false
+          Type=Application
+          Categories=Network;WebBrowser;
+          MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;application/x-xpinstall;application/pdf;application/json;
+          StartupNotify=true
+          Actions=new-window;new-private-window;
+
+          [Desktop Action new-window]
+          Name=Open a New Window
+          Exec=zen --new-window %u
+
+          [Desktop Action new-private-window]
+          Name=Open a New Private Window
+          Exec=zen --private-window %u
+          DESK
+
+          # Create launcher wrapper to enable Wayland and DE integrations when possible
+          cat > work/rpmbuild/SOURCES/zen-browser-launcher.sh << 'LAUNCH'
+          #!/usr/bin/bash
+          set -euo pipefail
+          [ -z "${MOZ_DISABLE_WAYLAND:-}" ] && { [ "${XDG_CURRENT_DESKTOP:-}" = "GNOME" ] && [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; } && export MOZ_ENABLE_WAYLAND=1 && export MOZ_DBUS_REMOTE=1
+
+          if [ "${XDG_CURRENT_DESKTOP:-}" = "KDE" ] && [ ! -e "${HOME}/.zen/native-messaging-hosts/org.kde.plasma.browser_integration.json" ]; then
+              mkdir -p "${HOME}/.zen/native-messaging-hosts"
+              [ -r /usr/lib64/mozilla/native-messaging-hosts/org.kde.plasma.browser_integration.json ] && ln -sf /usr/lib64/mozilla/native-messaging-hosts/org.kde.plasma.browser_integration.json "${HOME}/.zen/native-messaging-hosts/org.kde.plasma.browser_integration.json" || true
+          fi
+
+          if [ "${XDG_CURRENT_DESKTOP:-}" = "GNOME" ]; then
+              mkdir -p "${HOME}/.zen/native-messaging-hosts"
+              [ -r /usr/lib64/mozilla/native-messaging-hosts/org.gnome.browser_connector.json ] && ln -sf /usr/lib64/mozilla/native-messaging-hosts/org.gnome.browser_connector.json "${HOME}/.zen/native-messaging-hosts/org.gnome.browser_connector.json" || true
+              [ -r /usr/lib64/mozilla/native-messaging-hosts/org.gnome.chrome_gnome_shell.json ] && ln -sf /usr/lib64/mozilla/native-messaging-hosts/org.gnome.chrome_gnome_shell.json "${HOME}/.zen/native-messaging-hosts/org.gnome.chrome_gnome_shell.json" || true
+          fi
+
+          export MOZ_APP_LAUNCHER="${0}"
+          exec /usr/bin/zen "$@"
+          LAUNCH
+          chmod +x work/rpmbuild/SOURCES/zen-browser-launcher.sh
+
+          cat > work/rpmbuild/SPECS/${PACKAGE_NAME}.spec << 'EOF'
+          %global _build_id_links none
+
+          Name:           zen-browser
+          Version:        RPM_VERSION_PLACEHOLDER
+          Release:        1%{?dist}
+          Summary:        Zen Browser packaged for Fedora
+          License:        MPL-2.0
+          URL:            https://github.com/zen-browser/desktop
+          Source0:        SOURCE_TARBALL_PLACEHOLDER
+          Source1:        zen-browser.desktop
+          Source2:        zen-browser-launcher.sh
+
+          BuildArch:      BUILDARCH_PLACEHOLDER
+          BuildRequires:  xz
+          Requires:       /usr/bin/env
+
+          %description
+          Zen Browser (Firefork) packaged for Fedora. Installs under /opt/zen-browser and provides /usr/bin/zen symlink.
+
+          %prep
+          # Nothing to prepare; we will extract in %install
+
+          %build
+          # No build step; upstream provides prebuilt binaries
+
+          %install
+          rm -rf %{buildroot}
+          mkdir -p %{buildroot}%{_prefix}
+          mkdir -p %{buildroot}/opt/zen-browser
+          mkdir -p %{buildroot}%{_bindir}
+          mkdir -p %{buildroot}%{_datadir}/applications
+
+          # Extract source tarball into /opt/zen-browser
+          tar -xf %{SOURCE0} -C %{buildroot}/opt/zen-browser --strip-components=0
+
+          # Attempt to find a runnable 'zen' in the extracted tree, otherwise link main script
+          if [ -x "%{buildroot}/opt/zen-browser/zen" ]; then
+            ln -sf /opt/zen-browser/zen %{buildroot}%{_bindir}/zen
+          elif [ -x "%{buildroot}/opt/zen-browser/zen.sh" ]; then
+            ln -sf /opt/zen-browser/zen.sh %{buildroot}%{_bindir}/zen
+          else
+            # fallback: link to any executable named 'zen*' in top-level
+            first_bin="$(/usr/bin/find %{buildroot}/opt/zen-browser -maxdepth 1 -type f -perm -u=x -printf '%f\n' | /usr/bin/grep -E '^zen($|[^/])' | head -n1 || true)"
+            if [ -n "$first_bin" ]; then
+              ln -sf /opt/zen-browser/$first_bin %{buildroot}%{_bindir}/zen
+            else
+              # If nothing found, link to the main startup script commonly named 'zen'
+              ln -sf /opt/zen-browser/zen %{buildroot}%{_bindir}/zen || true
+            fi
+          fi
+
+          # Install wrapper launcher as 'zen-browser' which delegates to /usr/bin/zen
+          install -m 0755 %{SOURCE2} %{buildroot}%{_bindir}/zen-browser
+
+          # Install desktop entry
+          install -m 0644 %{SOURCE1} %{buildroot}%{_datadir}/applications/zen-browser.desktop
+
+          %files
+          /opt/zen-browser
+          %{_bindir}/zen
+          %{_bindir}/zen-browser
+          %{_datadir}/applications/zen-browser.desktop
+
+          %changelog
+          * Fri Sep 26 2025 GitHub Actions <actions@github.com> - RPM_VERSION_PLACEHOLDER-1
+          - Automated build from upstream release.
+
+          EOF
+
+          # We'll parameterize per arch at build-time using sed duplication
+          echo "Spec template written."
+
+          echo "$rpm_version" > work/RPM_VERSION
+
+      # ------------------------------------------------------------
+      # Build RPMs for both architectures
+      # ------------------------------------------------------------
+      - name: Build RPMs
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          latest_tag=$(cat work/LATEST_TAG)
+          rpm_version=$(cat work/RPM_VERSION)
+
+          for arch in $ARCHS; do
+            case "$arch" in
+              x86_64) asset="zen.linux-x86_64.tar.xz" ;;
+              aarch64) asset="zen.linux-aarch64.tar.xz" ;;
+              *) echo "Unsupported arch: $arch" && exit 1 ;;
+            esac
+
+            spec_in="work/rpmbuild/SPECS/${PACKAGE_NAME}.spec"
+            spec_out="work/rpmbuild/SPECS/${PACKAGE_NAME}-${arch}.spec"
+
+            # Replace placeholders for this arch
+            sed \
+              -e "s|RPM_VERSION_PLACEHOLDER|${rpm_version}|g" \
+              -e "s|SOURCE_TARBALL_PLACEHOLDER|${asset}|g" \
+              -e "s|BUILDARCH_PLACEHOLDER|${arch}|g" \
+              "$spec_in" > "$spec_out"
+
+            echo "Building RPM for ${arch}..."
+            rpmbuild \
+              --define "_topdir $PWD/work/rpmbuild" \
+              --target "${arch}" \
+              -bb "$spec_out"
+          done
+
+          echo "Built RPMs:"
+          find work/rpmbuild/RPMS -type f -name "*.rpm" -print
+
+      # ------------------------------------------------------------
+      # Assemble DNF repository and generate metadata
+      # ------------------------------------------------------------
+      - name: Create DNF repo (createrepo_c)
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p "$PAGES_DIR"
+          # Copy all RPMs into the repo root
+          find work/rpmbuild/RPMS -type f -name "*.rpm" -exec cp -v {} "$PAGES_DIR"/ \;
+          # Generate metadata
+          createrepo_c "$PAGES_DIR"
+          echo "Repo contents:"
+          ls -la "$PAGES_DIR"
+          echo "repodata:"
+          ls -la "$PAGES_DIR/repodata"
+
+      # ------------------------------------------------------------
+      # Deploy to GitHub Pages
+      # ------------------------------------------------------------
+      - name: Setup Pages
+        if: steps.check.outputs.no_change == 'false'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: steps.check.outputs.no_change == 'false'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.PAGES_DIR }}
+
+      - name: Deploy to GitHub Pages
+        if: steps.check.outputs.no_change == 'false'
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+      # ------------------------------------------------------------
+      # Create a GitHub Release in THIS repo with instructions
+      # ------------------------------------------------------------
+      - name: Create GitHub Release with instructions
+        if: steps.check.outputs.no_change == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.latest.outputs.tag }}
+          name: Zen Browser ${{ steps.latest.outputs.tag }}
+          body: |
+            Upstream release: https://github.com/${{ env.UPSTREAM_REPO }}/releases/tag/${{ steps.latest.outputs.tag }}
+
+            Fedora/DNF install instructions:
+
+            1. Add the repository:
+               sudo tee /etc/yum.repos.d/${{ env.DNF_REPO_NAME }}.repo > /dev/null << 'REPO'
+               [${{ env.DNF_REPO_NAME }}]
+               name=Zen Browser
+               baseurl=https://${{ env.CUSTOM_DOMAIN }}/
+               enabled=1
+               gpgcheck=0
+               repo_gpgcheck=0
+               skip_if_unavailable=True
+               metadata_expire=6h
+               REPO
+
+            2. Install:
+               sudo dnf clean all
+               sudo dnf install -y zen-browser
+
+            3. Update:
+               sudo dnf upgrade -y zen-browser
+
+            Notes:
+            - This repo provides both x86_64 and aarch64 RPMs.
+            - The package installs to /opt/zen-browser and creates a /usr/bin/zen symlink.
+
+          draft: false
+          prerelease: false
+          files: |
+            work/rpmbuild/RPMS/x86_64/*.rpm
+            work/rpmbuild/RPMS/aarch64/*.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ------------------------------------------------------------
+      # Update last_built_version.txt and push to default branch
+      # ------------------------------------------------------------
+      - name: Update last_built_version.txt
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          latest="${{ steps.latest.outputs.tag }}"
+          echo "$latest" > last_built_version.txt
+
+      - name: Commit and push last_built_version.txt
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add last_built_version.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update last_built_version.txt to ${{ steps.latest.outputs.tag }}"
+            git push
+          else
+            echo "No changes to commit."
+          fi
+
+      # ------------------------------------------------------------
+      # Summary when nothing to do
+      # ------------------------------------------------------------
+      - name: No-op summary
+        if: steps.check.outputs.no_change == 'true'
+        run: |
+          echo "No new upstream release. Exiting."
