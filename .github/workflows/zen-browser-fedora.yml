@@ -19,7 +19,7 @@ env:
   PAGES_DIR: public                  # directory that will be published to GitHub Pages
   DNF_REPO_NAME: zen-browser         # name used in .repo instructions
   UPSTREAM_REPO: zen-browser/desktop # upstream to poll for latest releases
-  ARCHS: "x86_64 aarch64"            # arches to build
+  # ARCHS will be set per matrix job
   PACKAGE_NAME: zen-browser          # RPM name
   INSTALL_PREFIX: /opt/zen-browser   # install location inside the RPM
   BIN_SYMLINK: /usr/bin/zen          # symlink for convenience
@@ -30,6 +30,11 @@ jobs:
     name: Build RPMs, update DNF repo, and release
     runs-on: ubuntu-latest
     container: fedora:42
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    env:
+      CURRENT_ARCH: ${{ matrix.arch }}
 
     steps:
       # ------------------------------------------------------------
@@ -103,25 +108,23 @@ jobs:
         if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
-          # Resolve exact asset download URLs from the upstream_latest.json to avoid tag prefix issues
-          for arch in $ARCHS; do
-            case "$arch" in
-              x86_64) asset="zen.linux-x86_64.tar.xz" ;;
-              aarch64) asset="zen.linux-aarch64.tar.xz" ;;
-              *) echo "Unsupported arch: $arch" && exit 1 ;;
-            esac
-            url=$(jq -r --arg name "$asset" '.assets[] | select(.name==$name) | .browser_download_url' upstream_latest.json)
-            if [ -z "$url" ] || [ "$url" = "null" ]; then
-              echo "Failed to find asset URL for $asset in upstream release. Available assets:" >&2
-              jq -r '.assets[].name' upstream_latest.json >&2
-              exit 1
-            fi
-            echo "Downloading $url"
-            curl -fL "$url" -o "work/rpmbuild/SOURCES/${asset}"
-            # Basic validation
-            file "work/rpmbuild/SOURCES/${asset}" || true
-            ls -l "work/rpmbuild/SOURCES/${asset}"
-          done
+          # Download tarball for current architecture only
+          case "$CURRENT_ARCH" in
+            x86_64) asset="zen.linux-x86_64.tar.xz" ;;
+            aarch64) asset="zen.linux-aarch64.tar.xz" ;;
+            *) echo "Unsupported arch: $CURRENT_ARCH" && exit 1 ;;
+          esac
+          url=$(jq -r --arg name "$asset" '.assets[] | select(.name==$name) | .browser_download_url' upstream_latest.json)
+          if [ -z "$url" ] || [ "$url" = "null" ]; then
+            echo "Failed to find asset URL for $asset in upstream release. Available assets:" >&2
+            jq -r '.assets[].name' upstream_latest.json >&2
+            exit 1
+          fi
+          echo "Downloading $url"
+          curl -fL "$url" -o "work/rpmbuild/SOURCES/${asset}"
+          # Basic validation
+          file "work/rpmbuild/SOURCES/${asset}" || true
+          ls -l "work/rpmbuild/SOURCES/${asset}"
 
       # ------------------------------------------------------------
       # Create a single spec template and build per-arch via --target
@@ -270,31 +273,30 @@ jobs:
           latest_tag=$(cat work/LATEST_TAG)
           rpm_version=$(cat work/RPM_VERSION)
 
-          for arch in $ARCHS; do
-            case "$arch" in
-              x86_64) asset="zen.linux-x86_64.tar.xz" ;;
-              aarch64) asset="zen.linux-aarch64.tar.xz" ;;
-              *) echo "Unsupported arch: $arch" && exit 1 ;;
-            esac
+          # Build RPM for current architecture
+          case "$CURRENT_ARCH" in
+            x86_64) asset="zen.linux-x86_64.tar.xz" ;;
+            aarch64) asset="zen.linux-aarch64.tar.xz" ;;
+            *) echo "Unsupported arch: $CURRENT_ARCH" && exit 1 ;;
+          esac
 
-            spec_in="work/rpmbuild/SPECS/${PACKAGE_NAME}.spec"
-            spec_out="work/rpmbuild/SPECS/${PACKAGE_NAME}-${arch}.spec"
+          spec_in="work/rpmbuild/SPECS/${PACKAGE_NAME}.spec"
+          spec_out="work/rpmbuild/SPECS/${PACKAGE_NAME}-${CURRENT_ARCH}.spec"
 
-            # Replace placeholders for this arch
-            sed \
-              -e "s|RPM_VERSION_PLACEHOLDER|${rpm_version}|g" \
-              -e "s|SOURCE_TARBALL_PLACEHOLDER|${asset}|g" \
-              -e "s|BUILDARCH_PLACEHOLDER|${arch}|g" \
-              "$spec_in" > "$spec_out"
+          # Replace placeholders for this arch
+          sed \
+            -e "s|RPM_VERSION_PLACEHOLDER|${rpm_version}|g" \
+            -e "s|SOURCE_TARBALL_PLACEHOLDER|${asset}|g" \
+            -e "s|BUILDARCH_PLACEHOLDER|${CURRENT_ARCH}|g" \
+            "$spec_in" > "$spec_out"
 
-            echo "Building RPM for ${arch}..."
-            # Set QA_RPATHS to ignore invalid RPATHs in upstream binaries (0x0002)
-            QA_RPATHS=0x0002 rpmbuild \
-              --define "_topdir $PWD/work/rpmbuild" \
-              --target "${arch}" \
-              --nodeps \
-              -bb "$spec_out"
-          done
+          echo "Building RPM for ${CURRENT_ARCH}..."
+          # Set QA_RPATHS to ignore invalid RPATHs in upstream binaries (0x0002)
+          QA_RPATHS=0x0002 rpmbuild \
+            --define "_topdir $PWD/work/rpmbuild" \
+            --target "${CURRENT_ARCH}" \
+            --nodeps \
+            -bb "$spec_out"
 
           echo "Built RPMs:"
           find work/rpmbuild/RPMS -type f -name "*.rpm" -print
@@ -302,49 +304,89 @@ jobs:
       # ------------------------------------------------------------
       # Assemble DNF repository and generate metadata
       # ------------------------------------------------------------
-      - name: Create DNF repo (createrepo_c)
+      - name: Upload RPM artifacts
         if: steps.check.outputs.no_change == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.arch }}
+          path: work/rpmbuild/RPMS/${{ matrix.arch }}/*.rpm
+          retention-days: 1
+
+  collect-and-deploy:
+    name: Collect RPMs and deploy repository
+    runs-on: ubuntu-latest
+    needs: build-and-deploy
+    if: needs.build-and-deploy.result == 'success'
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y createrepo-c gh
+
+      - name: Download all RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rpm-*
+          path: rpms/
+          merge-multiple: true
+
+      - name: Create DNF repo (createrepo_c)
         run: |
           set -euo pipefail
-          mkdir -p "$PAGES_DIR"
+          mkdir -p "${{ env.PAGES_DIR }}"
           # Copy all RPMs into the repo root
-          find work/rpmbuild/RPMS -type f -name "*.rpm" -exec cp -v {} "$PAGES_DIR"/ \;
+          find rpms/ -type f -name "*.rpm" -exec cp -v {} "${{ env.PAGES_DIR }}"/ \;
           # Generate metadata
-          createrepo_c "$PAGES_DIR"
+          createrepo_c "${{ env.PAGES_DIR }}"
           echo "Repo contents:"
-          ls -la "$PAGES_DIR"
+          ls -la "${{ env.PAGES_DIR }}"
           echo "repodata:"
-          ls -la "$PAGES_DIR/repodata"
+          ls -la "${{ env.PAGES_DIR }}/repodata"
 
       # ------------------------------------------------------------
       # Deploy to GitHub Pages
       # ------------------------------------------------------------
       - name: Setup Pages
-        if: steps.check.outputs.no_change == 'false'
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
-        if: steps.check.outputs.no_change == 'false'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ${{ env.PAGES_DIR }}
 
       - name: Deploy to GitHub Pages
-        if: steps.check.outputs.no_change == 'false'
         id: deploy
         uses: actions/deploy-pages@v4
 
       # ------------------------------------------------------------
       # Create a GitHub Release in THIS repo with instructions
       # ------------------------------------------------------------
+      - name: Get latest tag from first job
+        id: get_tag
+        run: |
+          # Fallback: fetch latest release directly since we can't easily get outputs from matrix jobs
+          tag=$(gh api repos/zen-browser/desktop/releases/latest --jq '.tag_name')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release with instructions
-        if: steps.check.outputs.no_change == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.latest.outputs.tag }}
-          name: Zen Browser ${{ steps.latest.outputs.tag }}
+          tag_name: ${{ steps.get_tag.outputs.tag }}
+          name: Zen Browser ${{ steps.get_tag.outputs.tag }}
           body: |
-            Upstream release: https://github.com/${{ env.UPSTREAM_REPO }}/releases/tag/${{ steps.latest.outputs.tag }}
+            Upstream release: https://github.com/${{ env.UPSTREAM_REPO }}/releases/tag/${{ steps.get_tag.outputs.tag }}
 
             Fedora/DNF install instructions:
 
@@ -374,8 +416,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            work/rpmbuild/RPMS/x86_64/*.rpm
-            work/rpmbuild/RPMS/aarch64/*.rpm
+            rpms/*.rpm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -383,30 +424,21 @@ jobs:
       # Update last_built_version.txt and push to default branch
       # ------------------------------------------------------------
       - name: Update last_built_version.txt
-        if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
-          latest="${{ steps.latest.outputs.tag }}"
+          latest="${{ steps.get_tag.outputs.tag }}"
           echo "$latest" > last_built_version.txt
 
       - name: Commit and push last_built_version.txt
-        if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add last_built_version.txt
           if ! git diff --cached --quiet; then
-            git commit -m "chore: update last_built_version.txt to ${{ steps.latest.outputs.tag }}"
+            git commit -m "chore: update last_built_version.txt to ${{ steps.get_tag.outputs.tag }}"
             git push
           else
             echo "No changes to commit."
           fi
 
-      # ------------------------------------------------------------
-      # Summary when nothing to do
-      # ------------------------------------------------------------
-      - name: No-op summary
-        if: steps.check.outputs.no_change == 'true'
-        run: |
-          echo "No new upstream release. Exiting."
