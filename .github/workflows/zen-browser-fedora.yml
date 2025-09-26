@@ -198,7 +198,6 @@ jobs:
           Source2:        zen-browser-launcher.sh
 
           BuildArch:      BUILDARCH_PLACEHOLDER
-          BuildRequires:  xz
           Requires:       /usr/bin/env
 
           %description
