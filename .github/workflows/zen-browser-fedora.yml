@@ -29,6 +29,7 @@ jobs:
   build-and-deploy:
     name: Build RPMs, update DNF repo, and release
     runs-on: ubuntu-latest
+    container: fedora:40
 
     steps:
       # ------------------------------------------------------------
@@ -44,8 +45,9 @@ jobs:
       # ------------------------------------------------------------
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y curl jq rpm createrepo-c xz-utils
+          dnf -y install \
+            rpm-build redhat-rpm-config createrepo_c jq curl xz file \
+            findutils sed tar git which
 
       # ------------------------------------------------------------
       # Get latest upstream release tag from GitHub API
@@ -221,17 +223,17 @@ jobs:
 
           # Attempt to find a runnable 'zen' in the extracted tree, otherwise link main script
           if [ -x "%{buildroot}/opt/zen-browser/zen" ]; then
-            ln -sf /opt/zen-browser/zen %{buildroot}%{_bindir}/zen
+            ln -sf ../../opt/zen-browser/zen %{buildroot}%{_bindir}/zen
           elif [ -x "%{buildroot}/opt/zen-browser/zen.sh" ]; then
-            ln -sf /opt/zen-browser/zen.sh %{buildroot}%{_bindir}/zen
+            ln -sf ../../opt/zen-browser/zen.sh %{buildroot}%{_bindir}/zen
           else
             # fallback: link to any executable named 'zen*' in top-level
             first_bin="$(/usr/bin/find %{buildroot}/opt/zen-browser -maxdepth 1 -type f -perm -u=x -printf '%f\n' | /usr/bin/grep -E '^zen($|[^/])' | head -n1 || true)"
             if [ -n "$first_bin" ]; then
-              ln -sf /opt/zen-browser/$first_bin %{buildroot}%{_bindir}/zen
+              ln -sf ../../opt/zen-browser/$first_bin %{buildroot}%{_bindir}/zen
             else
               # If nothing found, link to the main startup script commonly named 'zen'
-              ln -sf /opt/zen-browser/zen %{buildroot}%{_bindir}/zen || true
+              ln -sf ../../opt/zen-browser/zen %{buildroot}%{_bindir}/zen || true
             fi
           fi
 
@@ -289,6 +291,7 @@ jobs:
             rpmbuild \
               --define "_topdir $PWD/work/rpmbuild" \
               --target "${arch}" \
+              --nodeps \
               -bb "$spec_out"
           done
 
