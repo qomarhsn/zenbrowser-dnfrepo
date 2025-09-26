@@ -32,7 +32,7 @@ jobs:
     container: fedora:42
     strategy:
       matrix:
-        arch: [x86_64, aarch64]
+        arch: [x86_64] # aarch64 commented out - requires GitHub Enterprise for ARM64 runners
     env:
       CURRENT_ARCH: ${{ matrix.arch }}
 
@@ -410,7 +410,7 @@ jobs:
                sudo dnf upgrade -y zen-browser
 
             Notes:
-            - This repo provides both x86_64 and aarch64 RPMs.
+            - This repo provides x86_64 RPMs (aarch64 support requires GitHub Enterprise).
             - The package installs to /opt/zen-browser and creates a /usr/bin/zen symlink.
 
           draft: false
