@@ -23,7 +23,7 @@ env:
   PACKAGE_NAME: zen-browser          # RPM name
   INSTALL_PREFIX: /opt/zen-browser   # install location inside the RPM
   BIN_SYMLINK: /usr/bin/zen          # symlink for convenience
-  CUSTOM_DOMAIN: qomarhsn.github.io/zenbrowser-dnfrepo
+  CUSTOM_DOMAIN: zenbrowser-dnfrepo.qomarhsn.com
 
 jobs:
   build-and-deploy:
@@ -367,32 +367,32 @@ jobs:
           tag_name: ${{ steps.latest.outputs.tag }}
           name: Zen Browser ${{ steps.latest.outputs.tag }}
           body: |
-            Upstream release: https://github.com/${{ env.UPSTREAM_REPO }}/releases/tag/${{ steps.latest.outputs.tag }}
-
-            Fedora/DNF install instructions:
-
-            1. Add the repository:
-               sudo tee /etc/yum.repos.d/${{ env.DNF_REPO_NAME }}.repo > /dev/null << 'REPO'
-               [${{ env.DNF_REPO_NAME }}]
-               name=Zen Browser
-               baseurl=https://${{ env.CUSTOM_DOMAIN }}/
-               enabled=1
-               gpgcheck=0
-               repo_gpgcheck=0
-               skip_if_unavailable=True
-               metadata_expire=6h
-               REPO
-
-            2. Install:
-               sudo dnf clean all
-               sudo dnf install -y zen-browser
-
-            3. Update:
-               sudo dnf upgrade -y zen-browser
-
-            Notes:
-            - This repo provides x86_64 RPMs (aarch64 support requires GitHub Enterprise).
-            - The package installs to /opt/zen-browser and creates a /usr/bin/zen symlink.
+            ## Changelog
+            
+            See upstream release: [zen-browser/desktop@${{ steps.latest.outputs.tag }}](https://github.com/${{ env.UPSTREAM_REPO }}/releases/tag/${{ steps.latest.outputs.tag }})
+            
+            ## Installation
+            
+            # Add repository
+            ```bash
+            sudo tee /etc/yum.repos.d/zen-browser.repo > /dev/null << 'REPO'
+            [zen-browser]
+            name=Zen Browser
+            baseurl=https://${{ env.CUSTOM_DOMAIN }}/
+            enabled=1
+            gpgcheck=0
+            repo_gpgcheck=0
+            skip_if_unavailable=True
+            metadata_expire=6h
+            REPO
+            ```
+            
+            # Install
+            ```bash
+            sudo dnf install -y zen-browser
+            ```
+            
+            Full instructions: **[zenbrowser-dnfrepo.qomarhsn.com](https://${{ env.CUSTOM_DOMAIN }})**
 
           draft: false
           prerelease: false

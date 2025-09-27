@@ -4,127 +4,247 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zen Browser DNF Repository</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <style>
+        /* Define a truly dark base color and use Inter font */
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem;
-            line-height: 1.6;
-            color: #333;
+            font-family: 'Inter', sans-serif;
+            background-color: #000000; /* True Black */
         }
-        .header {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        .logo {
-            width: 64px;
-            height: 64px;
-            margin: 0 auto 1rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 24px;
-            font-weight: bold;
-        }
+        /* Custom styles for the code block */
         .code-block {
-            background: #f6f8fa;
-            border: 1px solid #d0d7de;
-            border-radius: 6px;
-            padding: 16px;
-            margin: 1rem 0;
-            overflow-x: auto;
+            position: relative;
+            background-color: #1a1a1a; /* Darker than card background */
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         }
-        .code-block code {
-            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-            font-size: 14px;
+        .code-block pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin: 0;
+            padding-right: 4rem; /* Space for the copy button */
         }
-        .step {
-            margin: 1.5rem 0;
+        .copy-btn {
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            background-color: #0ea5e9; /* Tailwind bg-sky-500 */
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            transition: background-color 0.15s ease-in-out;
+            border: none;
+            cursor: pointer;
         }
-        .step h3 {
-            color: #0969da;
-            margin-bottom: 0.5rem;
+        .copy-btn:hover {
+            background-color: #0284c7; /* Tailwind bg-sky-600 */
         }
-        .note {
-            background: #fff8c5;
-            border: 1px solid #d1cc00;
-            border-radius: 6px;
-            padding: 12px;
-            margin: 1rem 0;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 3rem;
-            padding-top: 2rem;
-            border-top: 1px solid #d0d7de;
-            color: #656d76;
+
+        /* Ensure smooth transitions on focus */
+        *:focus {
+            outline-offset: 2px;
+            outline: 2px solid #0ea5e9; /* Tailwind ring-sky-500 */
         }
     </style>
+    <script>
+        // Function to copy the code block content
+        function copyToClipboard(button, targetId) {
+            const preElement = document.getElementById(targetId);
+            const textToCopy = preElement.textContent;
+
+            // Use the fallback method for copying in iframes
+            const tempInput = document.createElement('textarea');
+            tempInput.value = textToCopy;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            
+            try {
+                document.execCommand('copy');
+                button.textContent = 'Copied!';
+                setTimeout(() => {
+                    button.textContent = 'Copy';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+                button.textContent = 'Error';
+            }
+            document.body.removeChild(tempInput);
+        }
+    </script>
 </head>
-<body>
-    <div class="header">
-        <div class="logo">Z</div>
-        <h1>Zen Browser DNF Repository</h1>
-        <p>Fedora/RHEL/CentOS packages for Zen Browser</p>
-    </div>
+<body class="min-h-screen p-4 sm:p-8 text-gray-100 antialiased">
 
-    <div class="note">
-        <strong>Note:</strong> This repository is automatically updated when new Zen Browser releases are available.
-    </div>
+    <div class="max-w-4xl mx-auto space-y-8">
 
-    <div class="step">
-        <h3>1. Add the Repository</h3>
-        <p>Create the repository configuration file:</p>
-        <div class="code-block">
-            <code>sudo tee /etc/yum.repos.d/zen-browser.repo > /dev/null << 'REPO'<br>
-[zen-browser]<br>
-name=Zen Browser<br>
-baseurl=https://qomarhsn.github.io/zenbrowser-dnfrepo/<br>
-enabled=1<br>
-gpgcheck=0<br>
-repo_gpgcheck=0<br>
-skip_if_unavailable=True<br>
-metadata_expire=6h<br>
-REPO</code>
-        </div>
-    </div>
+        <!-- Header Section -->
+        <header class="text-center mb-10 p-6 rounded-xl bg-zinc-900 shadow-2xl shadow-sky-900/10">
+            <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight text-sky-400 mb-2 flex items-center justify-center">
+                <!-- Custom SVG Logo Implementation -->
+                <svg class="h-12 w-12 mr-3" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Simplified logo to keep only the circular elements -->
+                    <circle cx="512.439" cy="512.44" r="113.02" stroke="#F2F0E3" stroke-width="25.1953"/>
+                    <circle cx="512.439" cy="512.44" r="197.737" stroke="#F2F0E3" stroke-width="41.9922"/>
+                    <circle cx="512.439" cy="512.44" r="298.266" stroke="#F2F0E3" stroke-width="58.7891"/>
+                </svg>
+                Zen Browser DNF Repository
+            </h1>
+            <p class="text-lg sm:text-xl text-gray-400">
+                Automated Fedora/RHEL/CentOS package for Zen Browser
+            </p>
+            <div class="mt-4 flex flex-wrap justify-center gap-3">
+                <span class="px-3 py-1 text-sm font-semibold rounded-full bg-sky-600 text-white flex items-center">
+                    <i class="fas fa-robot mr-2"></i> Automated
+                </span>
+                <span class="px-3 py-1 text-sm font-semibold rounded-full bg-zinc-700 text-gray-300 flex items-center">
+                    <i class="fas fa-box-open mr-2"></i> RPM Package
+                </span>
+                <span class="px-3 py-1 text-sm font-semibold rounded-full bg-sky-600 text-white flex items-center">
+                    <i class="fas fa-sync-alt mr-2"></i> Auto-Updated
+                </span>
+            </div>
+        </header>
 
-    <div class="step">
-        <h3>2. Install Zen Browser</h3>
-        <div class="code-block">
-            <code>sudo dnf clean all<br>
-sudo dnf install -y zen-browser</code>
-        </div>
-    </div>
+        <!-- Quick Setup Card -->
+        <section class="card bg-zinc-900 p-6 rounded-xl shadow-lg border border-sky-600/50">
+            <div class="card-header mb-6">
+                <h2 class="text-3xl font-bold text-sky-400 flex items-center">
+                    <i class="fas fa-bolt mr-3"></i> Quick Setup
+                </h2>
+                <p class="text-gray-400 mt-1">Add the repository and install Zen Browser in 3 simple steps</p>
+            </div>
 
-    <div class="step">
-        <h3>3. Update Zen Browser</h3>
-        <p>To update to the latest version:</p>
-        <div class="code-block">
-            <code>sudo dnf upgrade -y zen-browser</code>
-        </div>
-    </div>
+            <div class="space-y-6">
+                
+                <!-- Step 1 -->
+                <div class="card bg-zinc-800/50 p-4 rounded-lg border border-zinc-700">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center text-gray-200">
+                        <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">1</span>
+                        Add Repository
+                    </h3>
+                    <!-- Code Block uses custom background for contrast -->
+                    <div class="code-block text-sm">
+                        <button class="copy-btn" onclick="copyToClipboard(this, 'repo-config')">Copy</button>
+                        <pre id="repo-config">sudo tee /etc/yum.repos.d/zen-browser.repo > /dev/null << 'REPO'
+[zen-browser]
+name=Zen Browser
+baseurl=https://zenbrowser-dnfrepo.qomarhsn.com/
+enabled=1
+gpgcheck=0
+repo_gpgcheck=0
+skip_if_unavailable=True
+metadata_expire=6h
+REPO</pre>
+                    </div>
+                </div>
 
-    <div class="step">
-        <h3>Package Information</h3>
-        <ul>
-            <li><strong>Installation Path:</strong> <code>/opt/zen-browser</code></li>
-            <li><strong>Binary Symlink:</strong> <code>/usr/bin/zen</code></li>
-            <li><strong>Launcher:</strong> <code>/usr/bin/zen-browser</code></li>
-            <li><strong>Supported Architectures:</strong> x86_64</li>
-        </ul>
-    </div>
+                <!-- Step 2 -->
+                <div class="card bg-zinc-800/50 p-4 rounded-lg border border-zinc-700">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center text-gray-200">
+                        <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">2</span>
+                        Install Zen Browser
+                    </h3>
+                    <div class="code-block text-sm">
+                        <button class="copy-btn" onclick="copyToClipboard(this, 'install-cmd')">Copy</button>
+                        <pre id="install-cmd">sudo dnf clean all
+sudo dnf install -y zen-browser</pre>
+                    </div>
+                </div>
 
-    <div class="footer">
-        <p>
-            <a href="https://github.com/zen-browser/desktop">Zen Browser</a> | 
-            <a href="https://github.com/qomarhsn/zenbrowser-dnfrepo">Repository Source</a>
-        </p>
-        <p>This repository is maintained automatically via GitHub Actions.</p>
+                <!-- Step 3 -->
+                <div class="card bg-zinc-800/50 p-4 rounded-lg border border-zinc-700">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center text-gray-200">
+                        <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">3</span>
+                        Launch & Update
+                    </h3>
+                    <div class="code-block text-sm">
+                        <button class="copy-btn" onclick="copyToClipboard(this, 'launch-cmd')">Copy</button>
+                        <pre id="launch-cmd"># Launch Zen Browser
+zen-browser
+
+# Or update to latest version
+sudo dnf upgrade -y zen-browser</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Package Information Card -->
+        <section class="card bg-zinc-900 p-6 rounded-xl shadow-lg border border-sky-600/50">
+            <div class="card-header mb-6">
+                <h2 class="text-3xl font-bold text-sky-400 flex items-center">
+                    <i class="fas fa-cubes mr-3"></i> Package Information
+                </h2>
+                <p class="text-gray-400 mt-1">Details about the Zen Browser RPM package</p>
+            </div>
+            
+            <!-- Grid layout for package info -->
+            <div class="info-grid grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                <!-- Installation Path -->
+                <div class="info-item bg-zinc-800/50 p-3 rounded-lg border border-zinc-700">
+                    <div class="info-label text-sm font-medium text-sky-400 flex items-center"><i class="fas fa-folder mr-2"></i> Installation Path</div>
+                    <div class="info-value mt-1 font-mono text-gray-300 break-words">/opt/zen-browser</div>
+                </div>
+
+                <!-- Binary Symlink -->
+                <div class="info-item bg-zinc-800/50 p-3 rounded-lg border border-zinc-700">
+                    <div class="info-label text-sm font-medium text-sky-400 flex items-center"><i class="fas fa-link mr-2"></i> Binary Symlink</div>
+                    <div class="info-value mt-1 font-mono text-gray-300 break-words">/usr/bin/zen</div>
+                </div>
+
+                <!-- Launcher Script -->
+                <div class="info-item bg-zinc-800/50 p-3 rounded-lg border border-zinc-700">
+                    <div class="info-label text-sm font-medium text-sky-400 flex items-center"><i class="fas fa-file-code mr-2"></i> Launcher Script</div>
+                    <div class="info-value mt-1 font-mono text-gray-300 break-words">/usr/bin/zen-browser</div>
+                </div>
+
+                <!-- Architecture -->
+                <div class="info-item bg-zinc-800/50 p-3 rounded-lg border border-zinc-700">
+                    <div class="info-label text-sm font-medium text-sky-400 flex items-center"><i class="fas fa-microchip mr-2"></i> Architecture</div>
+                    <div class="info-value mt-1 font-mono text-gray-300 break-words">x86_64</div>
+                </div>
+
+                <!-- Desktop Entry -->
+                <div class="info-item bg-zinc-800/50 p-3 rounded-lg border border-zinc-700">
+                    <div class="info-label text-sm font-medium text-sky-400 flex items-center"><i class="fas fa-desktop mr-2"></i> Desktop Entry</div>
+                    <div class="info-value mt-1 font-mono text-gray-300 break-words">/usr/share/applications/zen-browser.desktop</div>
+                </div>
+
+                <!-- Icon -->
+                <div class="info-item bg-zinc-800/50 p-3 rounded-lg border border-zinc-700">
+                    <div class="info-label text-sm font-medium text-sky-400 flex items-center"><i class="fas fa-image mr-2"></i> Icon</div>
+                    <div class="info-value mt-1 font-mono text-gray-300 break-words">/usr/share/pixmaps/zen-browser.png</div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="text-center pt-8 border-t border-zinc-700 text-gray-400">
+            <div class="footer-links flex flex-wrap justify-center gap-4 mb-4 text-sm font-medium">
+                <a href="https://github.com/zen-browser/desktop" class="hover:text-sky-400 transition duration-150 flex items-center">
+                    <i class="fas fa-globe mr-1"></i> Zen Browser
+                </a>
+                <a href="https://github.com/qomarhsn/zenbrowser-dnfrepo" class="hover:text-sky-400 transition duration-150 flex items-center">
+                    <i class="fas fa-code-branch mr-1"></i> Repository Source
+                </a>
+                <a href="https://github.com/qomarhsn/zenbrowser-dnfrepo/actions" class="hover:text-sky-400 transition duration-150 flex items-center">
+                    <i class="fas fa-cogs mr-1"></i> Build Status
+                </a>
+            </div>
+            <div class="text-xs">
+                Maintained by <a href="https://github.com/qomarhsn" class="text-sky-400 hover:text-sky-300 transition duration-150">Qomarul Hasan (@qomarhsn)</a> for personal use, but available for use by anyone.
+                <br>
+                <small class="block mt-1">All packaging and deployment automated via GitHub Actions</small>
+            </div>
+        </footer>
+
     </div>
 </body>
 </html>
