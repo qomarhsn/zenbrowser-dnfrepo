@@ -373,7 +373,7 @@ jobs:
             
             ## Installation
             
-            # Add repository
+            ### Add repository
             ```bash
             sudo tee /etc/yum.repos.d/zen-browser.repo > /dev/null << 'REPO'
             [zen-browser]
@@ -387,8 +387,10 @@ jobs:
             REPO
             ```
             
-            # Install
+            ### Install
             ```bash
+            sudo dnf clean all
+            sudo dnf update -y
             sudo dnf install -y zen-browser
             ```
             
