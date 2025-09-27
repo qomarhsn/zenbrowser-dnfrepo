@@ -221,23 +221,37 @@ jobs:
           mkdir -p %{buildroot}%{_datadir}/applications
 
           # Extract source tarball into /opt/zen-browser
-          tar -xf %{SOURCE0} -C %{buildroot}/opt/zen-browser --strip-components=0
+          tar -xf %{SOURCE0} -C %{buildroot}/opt/zen-browser --strip-components=1
 
-          # Attempt to find a runnable 'zen' in the extracted tree, otherwise link main script
+          # Debug: Show what was extracted
+          echo "=== Contents of extracted tarball ==="
+          ls -la %{buildroot}/opt/zen-browser/
+          echo "=== Executable files ==="
+          find %{buildroot}/opt/zen-browser -maxdepth 2 -type f -perm -u=x -ls || true
+
+          # Find the actual zen executable in the extracted directory
+          zen_executable=""
           if [ -x "%{buildroot}/opt/zen-browser/zen" ]; then
-            ln -sf ../../opt/zen-browser/zen %{buildroot}%{_bindir}/zen
-          elif [ -x "%{buildroot}/opt/zen-browser/zen.sh" ]; then
-            ln -sf ../../opt/zen-browser/zen.sh %{buildroot}%{_bindir}/zen
+            zen_executable="zen"
+            echo "Found zen executable: zen"
+          elif [ -x "%{buildroot}/opt/zen-browser/zen-bin" ]; then
+            zen_executable="zen-bin"
+            echo "Found zen executable: zen-bin"
+          elif [ -x "%{buildroot}/opt/zen-browser/firefox" ]; then
+            zen_executable="firefox"
+            echo "Found zen executable: firefox"
           else
-            # fallback: link to any executable named 'zen*' in top-level
-            first_bin="$(/usr/bin/find %{buildroot}/opt/zen-browser -maxdepth 1 -type f -perm -u=x -printf '%f\n' | /usr/bin/grep -E '^zen($|[^/])' | head -n1 || true)"
-            if [ -n "$first_bin" ]; then
-              ln -sf ../../opt/zen-browser/$first_bin %{buildroot}%{_bindir}/zen
-            else
-              # If nothing found, link to the main startup script commonly named 'zen'
-              ln -sf ../../opt/zen-browser/zen %{buildroot}%{_bindir}/zen || true
-            fi
+            # Find any executable file that could be the main binary
+            zen_executable="$(/usr/bin/find %{buildroot}/opt/zen-browser -maxdepth 1 -type f -perm -u=x -printf '%f\n' | head -n1 || echo "zen")"
+            echo "Found zen executable (fallback): $zen_executable"
           fi
+
+          # Create symlink to the found executable
+          echo "Creating symlink: /usr/bin/zen -> ../../opt/zen-browser/$zen_executable"
+          ln -sf ../../opt/zen-browser/$zen_executable %{buildroot}%{_bindir}/zen
+          
+          # Verify the symlink was created correctly
+          ls -la %{buildroot}%{_bindir}/zen
 
           # Install wrapper launcher as 'zen-browser' which delegates to /usr/bin/zen
           install -m 0755 %{SOURCE2} %{buildroot}%{_bindir}/zen-browser
