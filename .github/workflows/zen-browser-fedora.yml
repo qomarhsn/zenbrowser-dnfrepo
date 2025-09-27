@@ -22,7 +22,6 @@ env:
   # ARCHS will be set per matrix job
   PACKAGE_NAME: zen-browser          # RPM name
   INSTALL_PREFIX: /opt/zen-browser   # install location inside the RPM
-  BIN_SYMLINK: /usr/bin/zen          # symlink for convenience
   CUSTOM_DOMAIN: zenbrowser-dnfrepo.qomarhsn.com
 
 jobs:
@@ -147,7 +146,7 @@ jobs:
           Name=Zen Browser
           GenericName=Web Browser
           Comment=Experience tranquillity while browsing the web without people tracking you!
-          Exec=zen %u
+          Exec=zen-browser %u
           StartupWMClass=zen
           Icon=zen-browser
           Terminal=false
@@ -159,11 +158,11 @@ jobs:
 
           [Desktop Action new-window]
           Name=Open a New Window
-          Exec=zen --new-window %u
+          Exec=zen-browser --new-window %u
 
           [Desktop Action new-private-window]
           Name=Open a New Private Window
-          Exec=zen --private-window %u
+          Exec=zen-browser --private-window %u
           DESK
 
           # Create launcher wrapper to enable Wayland and DE integrations when possible
@@ -184,7 +183,26 @@ jobs:
           fi
 
           export MOZ_APP_LAUNCHER="${0}"
-          exec /usr/bin/zen "$@"
+          
+          # Find the actual zen executable
+          zen_executable=""
+          if [ -x "/opt/zen-browser/zen" ]; then
+            zen_executable="/opt/zen-browser/zen"
+          elif [ -x "/opt/zen-browser/zen-bin" ]; then
+            zen_executable="/opt/zen-browser/zen-bin"
+          elif [ -x "/opt/zen-browser/firefox" ]; then
+            zen_executable="/opt/zen-browser/firefox"
+          else
+            # Find any executable file that could be the main binary
+            zen_executable="$(find /opt/zen-browser -maxdepth 1 -type f -perm -u=x | head -n1)"
+          fi
+          
+          if [ -z "$zen_executable" ] || [ ! -x "$zen_executable" ]; then
+            echo "Error: Could not find zen executable in /opt/zen-browser" >&2
+            exit 1
+          fi
+          
+          exec "$zen_executable" "$@"
           LAUNCH
           chmod +x work/rpmbuild/SOURCES/zen-browser-launcher.sh
 
@@ -203,9 +221,11 @@ jobs:
 
           BuildArch:      BUILDARCH_PLACEHOLDER
           Requires:       /bin/bash
+          # Ensure zen-browser is installed as the primary launcher
+          Provides:       zen-browser
 
           %description
-          Zen Browser (Firefork) packaged for Fedora. Installs under /opt/zen-browser and provides /usr/bin/zen symlink.
+          Zen Browser (Firefork) packaged for Fedora. Installs under /opt/zen-browser with /usr/bin/zen-browser as the primary launcher and /usr/bin/zen as a convenience symlink.
 
           %prep
           # Nothing to prepare; we will extract in %install
@@ -229,32 +249,15 @@ jobs:
           echo "=== Executable files ==="
           find %{buildroot}/opt/zen-browser -maxdepth 2 -type f -perm -u=x -ls || true
 
-          # Find the actual zen executable in the extracted directory
-          zen_executable=""
-          if [ -x "%{buildroot}/opt/zen-browser/zen" ]; then
-            zen_executable="zen"
-            echo "Found zen executable: zen"
-          elif [ -x "%{buildroot}/opt/zen-browser/zen-bin" ]; then
-            zen_executable="zen-bin"
-            echo "Found zen executable: zen-bin"
-          elif [ -x "%{buildroot}/opt/zen-browser/firefox" ]; then
-            zen_executable="firefox"
-            echo "Found zen executable: firefox"
-          else
-            # Find any executable file that could be the main binary
-            zen_executable="$(/usr/bin/find %{buildroot}/opt/zen-browser -maxdepth 1 -type f -perm -u=x -printf '%f\n' | head -n1 || echo "zen")"
-            echo "Found zen executable (fallback): $zen_executable"
-          fi
-
-          # Create symlink to the found executable
-          echo "Creating symlink: /usr/bin/zen -> ../../opt/zen-browser/$zen_executable"
-          ln -sf ../../opt/zen-browser/$zen_executable %{buildroot}%{_bindir}/zen
+          # Install wrapper launcher as 'zen-browser' which calls the real binary directly
+          install -m 0755 %{SOURCE2} %{buildroot}%{_bindir}/zen-browser
+          
+          # Create symlink: /usr/bin/zen -> /usr/bin/zen-browser
+          echo "Creating symlink: /usr/bin/zen -> zen-browser"
+          ln -sf zen-browser %{buildroot}%{_bindir}/zen
           
           # Verify the symlink was created correctly
           ls -la %{buildroot}%{_bindir}/zen
-
-          # Install wrapper launcher as 'zen-browser' which delegates to /usr/bin/zen
-          install -m 0755 %{SOURCE2} %{buildroot}%{_bindir}/zen-browser
 
           # Download and install official Zen Browser icon
           mkdir -p %{buildroot}%{_datadir}/pixmaps
