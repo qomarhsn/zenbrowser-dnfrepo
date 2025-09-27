@@ -50,7 +50,7 @@ jobs:
         run: |
           dnf -y install \
             rpm-build redhat-rpm-config createrepo_c jq curl xz file \
-            findutils sed tar git which rpm-sign expect gnupg2
+            findutils sed tar git which rpm-sign rpmsign expect gnupg2
 
       # ------------------------------------------------------------
       # Import and setup GPG key for signing
@@ -81,13 +81,16 @@ jobs:
         if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
-          mkdir -p ~/.rpmmacros
+          # Create .rpmmacros file with proper configuration
           cat > ~/.rpmmacros << EOF
           %_signature gpg
           %_gpg_name ${{ secrets.GPG_KEY_ID }}
           %_gpgbin /usr/bin/gpg
           %__gpg_sign_cmd %{__gpg} gpg --batch --verbose --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" -u "%{_gpg_name}" -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}
           EOF
+          
+          # Also set environment variables for rpm command
+          echo "GPG_NAME=${{ secrets.GPG_KEY_ID }}" >> $GITHUB_ENV
 
       # ------------------------------------------------------------
       # Get latest upstream release tag from GitHub API
@@ -363,8 +366,10 @@ jobs:
           echo "Signing RPMs..."
           for rpm_file in $(find work/rpmbuild/RPMS -name "*.rpm"); do
             echo "Signing: $rpm_file"
-            rpm --addsign "$rpm_file"
+            # Use rpmsign with batch mode
+            echo "${{ secrets.GPG_PASSPHRASE }}" | rpmsign --addsign --key-id=${{ secrets.GPG_KEY_ID }} "$rpm_file"
             # Verify signature
+            echo "Verifying signature for: $rpm_file"
             rpm -K "$rpm_file"
           done
 
