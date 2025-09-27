@@ -23,7 +23,7 @@ env:
   PACKAGE_NAME: zen-browser          # RPM name
   INSTALL_PREFIX: /opt/zen-browser   # install location inside the RPM
   BIN_SYMLINK: /usr/bin/zen          # symlink for convenience
-  CUSTOM_DOMAIN: zenbrowser-dnfrepo.qomarhsn.com
+  CUSTOM_DOMAIN: qomarhsn.github.io/zenbrowser-dnfrepo
 
 jobs:
   build-and-deploy:
