@@ -71,22 +71,14 @@ jobs:
           EOF
           chmod 600 ~/.gnupg/gpg.conf
           
-          # Debug: Show current environment
-          echo "Current user: $(whoami)"
-          echo "Home directory: $HOME"
-          echo "GPG directory: $(ls -la ~/.gnupg/)"
           
           # Import the private key
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           
           # Trust the key ultimately (get full fingerprint first)
           FINGERPRINT=$(gpg --list-secret-keys --with-colons ${{ secrets.GPG_KEY_ID }} | grep fpr | head -1 | cut -d: -f10)
-          echo "Key fingerprint: $FINGERPRINT"
           echo "$FINGERPRINT:6:" | gpg --import-ownertrust
           
-          # List imported keys
-          echo "Imported GPG keys:"
-          gpg --list-secret-keys --keyid-format LONG
           
           # Test the key
           echo "test" | gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --clearsign > /dev/null
@@ -391,32 +383,10 @@ jobs:
           mkdir -p $HOME/.gnupg
           chmod 700 $HOME/.gnupg
           
-          # Debug environment
-          echo "Current user: $(whoami)"
-          echo "Home directory: $HOME"
-          echo "GPG home: $GNUPGHOME"
-          echo "GPG TTY: $GPG_TTY"
-          ls -la $HOME/.gnupg/ || echo "GPG directory doesn't exist"
-          
-          # List available keys for debugging
-          echo "Available GPG keys:"
-          gpg --list-secret-keys --keyid-format LONG
-          
-          # Verify the specific key we need
-          echo "Checking for key ${{ secrets.GPG_KEY_ID }}:"
-          gpg --list-secret-keys ${{ secrets.GPG_KEY_ID }} || echo "Key not found!"
           
           # Import public key into RPM database for verification
-          echo "Importing public key into RPM database..."
           gpg --armor --export ${{ secrets.GPG_KEY_ID }} > /tmp/pubkey.asc
-          echo "Exported key size: $(wc -c < /tmp/pubkey.asc) bytes"
-          echo "Key preview:"
-          head -5 /tmp/pubkey.asc
           rpm --import /tmp/pubkey.asc
-          
-          # Show RPM keys for debugging
-          echo "RPM database keys:"
-          rpm -qa gpg-pubkey*
           
           for rpm_file in $(find work/rpmbuild/RPMS -name "*.rpm"); do
             echo "Signing: $rpm_file"
@@ -427,17 +397,9 @@ jobs:
                 --define "__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase '${{ secrets.GPG_PASSPHRASE }}' -u %{_gpg_name} -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}" \
                 --addsign "$rpm_file"
             
-            # Check if signing actually worked
-            echo "Checking for signature files:"
-            ls -la "${rpm_file}"* || echo "No signature files found"
-            
-            # Verify signature with detailed output
+            # Verify signature
             echo "Verifying signature for: $rpm_file"
-            rpm -K -v "$rpm_file"
-            
-            # Also check what signatures are actually present
-            echo "Signature details:"
-            rpm -qp --qf '%{SIGPGP:pgpsig}\n' "$rpm_file" || echo "No PGP signature found"
+            rpm -K "$rpm_file"
           done
 
       # ------------------------------------------------------------
