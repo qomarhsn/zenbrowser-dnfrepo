@@ -59,15 +59,29 @@ jobs:
         if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
+          
+          # Configure GPG directory and permissions
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+          
+          # Configure GPG for non-interactive use
+          cat > ~/.gnupg/gpg.conf << EOF
+          pinentry-mode loopback
+          use-agent
+          batch
+          no-tty
+          EOF
+          chmod 600 ~/.gnupg/gpg.conf
+          
           # Import the private key
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           
-          # Configure GPG for non-interactive use
-          mkdir -p ~/.gnupg
-          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-          echo "use-agent" >> ~/.gnupg/gpg.conf
-          chmod 700 ~/.gnupg
-          chmod 600 ~/.gnupg/gpg.conf
+          # Trust the key ultimately
+          echo "${{ secrets.GPG_KEY_ID }}:6:" | gpg --import-ownertrust
+          
+          # List imported keys
+          echo "Imported GPG keys:"
+          gpg --list-secret-keys --keyid-format LONG
           
           # Test the key
           echo "test" | gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --clearsign > /dev/null
@@ -364,10 +378,25 @@ jobs:
 
           # Sign all built RPMs
           echo "Signing RPMs..."
+          
+          # Set GPG environment variables
+          export GPG_TTY=$(tty)
+          export GNUPGHOME=$HOME/.gnupg
+          
+          # List available keys for debugging
+          echo "Available GPG keys:"
+          gpg --list-secret-keys
+          
           for rpm_file in $(find work/rpmbuild/RPMS -name "*.rpm"); do
             echo "Signing: $rpm_file"
-            # Use rpmsign with batch mode
-            echo "${{ secrets.GPG_PASSPHRASE }}" | rpmsign --addsign --key-id=${{ secrets.GPG_KEY_ID }} "$rpm_file"
+            # Use rpm --addsign with proper GPG setup
+            echo "${{ secrets.GPG_PASSPHRASE }}" | \
+            GNUPGHOME=$HOME/.gnupg \
+            rpm --define "_gpg_name ${{ secrets.GPG_KEY_ID }}" \
+                --define "_signature gpg" \
+                --define "__gpg_sign_cmd %{__gpg} gpg --batch --verbose --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 0 -u %{_gpg_name} -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}" \
+                --addsign "$rpm_file"
+            
             # Verify signature
             echo "Verifying signature for: $rpm_file"
             rpm -K "$rpm_file"
