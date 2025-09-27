@@ -56,7 +56,6 @@ jobs:
       # Import and setup GPG key for signing
       # ------------------------------------------------------------
       - name: Import GPG key for signing
-        if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
           
@@ -64,14 +63,19 @@ jobs:
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           
-          # Configure GPG for non-interactive use
+          # Configure GPG for non-interactive use in container
           cat > ~/.gnupg/gpg.conf << EOF
           pinentry-mode loopback
-          use-agent
           batch
           no-tty
+          no-use-agent
           EOF
           chmod 600 ~/.gnupg/gpg.conf
+          
+          # Debug: Show current environment
+          echo "Current user: $(whoami)"
+          echo "Home directory: $HOME"
+          echo "GPG directory: $(ls -la ~/.gnupg/)"
           
           # Import the private key
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
@@ -92,7 +96,6 @@ jobs:
       # Configure RPM signing macros
       # ------------------------------------------------------------
       - name: Configure RPM signing
-        if: steps.check.outputs.no_change == 'false'
         run: |
           set -euo pipefail
           # Create .rpmmacros file with proper configuration
@@ -379,13 +382,28 @@ jobs:
           # Sign all built RPMs
           echo "Signing RPMs..."
           
-          # Set GPG environment variables
-          export GPG_TTY=$(tty)
+          # Set GPG environment variables for container
+          export GPG_TTY=/dev/console
           export GNUPGHOME=$HOME/.gnupg
+          
+          # Ensure GPG directory exists and has correct permissions
+          mkdir -p $HOME/.gnupg
+          chmod 700 $HOME/.gnupg
+          
+          # Debug environment
+          echo "Current user: $(whoami)"
+          echo "Home directory: $HOME"
+          echo "GPG home: $GNUPGHOME"
+          echo "GPG TTY: $GPG_TTY"
+          ls -la $HOME/.gnupg/ || echo "GPG directory doesn't exist"
           
           # List available keys for debugging
           echo "Available GPG keys:"
-          gpg --list-secret-keys
+          gpg --list-secret-keys --keyid-format LONG
+          
+          # Verify the specific key we need
+          echo "Checking for key ${{ secrets.GPG_KEY_ID }}:"
+          gpg --list-secret-keys ${{ secrets.GPG_KEY_ID }} || echo "Key not found!"
           
           for rpm_file in $(find work/rpmbuild/RPMS -name "*.rpm"); do
             echo "Signing: $rpm_file"
