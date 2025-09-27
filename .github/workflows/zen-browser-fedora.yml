@@ -408,7 +408,11 @@ jobs:
           
           # Import public key into RPM database for verification
           echo "Importing public key into RPM database..."
-          gpg --armor --export ${{ secrets.GPG_KEY_ID }} | rpm --import
+          gpg --armor --export ${{ secrets.GPG_KEY_ID }} > /tmp/pubkey.asc
+          echo "Exported key size: $(wc -c < /tmp/pubkey.asc) bytes"
+          echo "Key preview:"
+          head -5 /tmp/pubkey.asc
+          rpm --import /tmp/pubkey.asc
           
           # Show RPM keys for debugging
           echo "RPM database keys:"
