@@ -420,17 +420,24 @@ jobs:
           
           for rpm_file in $(find work/rpmbuild/RPMS -name "*.rpm"); do
             echo "Signing: $rpm_file"
-            # Use rpm --addsign with proper GPG setup
-            echo "${{ secrets.GPG_PASSPHRASE }}" | \
+            # Use rpm --addsign with simpler GPG setup
             GNUPGHOME=$HOME/.gnupg \
             rpm --define "_gpg_name ${{ secrets.GPG_KEY_ID }}" \
                 --define "_signature gpg" \
-                --define "__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 0 -u %{_gpg_name} -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}" \
+                --define "__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase '${{ secrets.GPG_PASSPHRASE }}' -u %{_gpg_name} -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}" \
                 --addsign "$rpm_file"
             
-            # Verify signature
+            # Check if signing actually worked
+            echo "Checking for signature files:"
+            ls -la "${rpm_file}"* || echo "No signature files found"
+            
+            # Verify signature with detailed output
             echo "Verifying signature for: $rpm_file"
-            rpm -K "$rpm_file"
+            rpm -K -v "$rpm_file"
+            
+            # Also check what signatures are actually present
+            echo "Signature details:"
+            rpm -qp --qf '%{SIGPGP:pgpsig}\n' "$rpm_file" || echo "No PGP signature found"
           done
 
       # ------------------------------------------------------------
