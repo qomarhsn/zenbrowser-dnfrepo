@@ -256,6 +256,10 @@ jobs:
           # Install wrapper launcher as 'zen-browser' which delegates to /usr/bin/zen
           install -m 0755 %{SOURCE2} %{buildroot}%{_bindir}/zen-browser
 
+          # Download and install official Zen Browser icon
+          mkdir -p %{buildroot}%{_datadir}/pixmaps
+          curl -fsSL "https://raw.githubusercontent.com/zen-browser/branding/main/Official/PNG/Zen-3D-Dark.png" -o %{buildroot}%{_datadir}/pixmaps/zen-browser.png
+
           # Install desktop entry
           install -m 0644 %{SOURCE1} %{buildroot}%{_datadir}/applications/zen-browser.desktop
 
@@ -264,6 +268,7 @@ jobs:
           %{_bindir}/zen
           %{_bindir}/zen-browser
           %{_datadir}/applications/zen-browser.desktop
+          %{_datadir}/pixmaps/zen-browser.png
 
           %changelog
           * Thu Sep 26 2024 GitHub Actions <actions@github.com> - RPM_VERSION_PLACEHOLDER-1
