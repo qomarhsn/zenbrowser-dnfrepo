@@ -68,7 +68,6 @@ jobs:
           pinentry-mode loopback
           batch
           no-tty
-          no-use-agent
           EOF
           chmod 600 ~/.gnupg/gpg.conf
           
@@ -80,8 +79,10 @@ jobs:
           # Import the private key
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           
-          # Trust the key ultimately
-          echo "${{ secrets.GPG_KEY_ID }}:6:" | gpg --import-ownertrust
+          # Trust the key ultimately (get full fingerprint first)
+          FINGERPRINT=$(gpg --list-secret-keys --with-colons ${{ secrets.GPG_KEY_ID }} | grep fpr | head -1 | cut -d: -f10)
+          echo "Key fingerprint: $FINGERPRINT"
+          echo "$FINGERPRINT:6:" | gpg --import-ownertrust
           
           # List imported keys
           echo "Imported GPG keys:"
