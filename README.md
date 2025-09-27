@@ -4,27 +4,33 @@ Automated DNF repository for [Zen Browser](https://github.com/zen-browser/deskto
 
 ## Quick Install
 
-### 1. Add Repository
+### 1. Import GPG Key
+```bash
+sudo rpm --import https://zenbrowser-dnfrepo.qomarhsn.com/RPM-GPG-KEY-zen-browser
+```
+
+### 2. Add Repository
 ```bash
 sudo tee /etc/yum.repos.d/zen-browser.repo > /dev/null << 'REPO'
 [zen-browser]
 name=Zen Browser
 baseurl=https://zenbrowser-dnfrepo.qomarhsn.com/
 enabled=1
-gpgcheck=0
-repo_gpgcheck=0
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://zenbrowser-dnfrepo.qomarhsn.com/RPM-GPG-KEY-zen-browser
 skip_if_unavailable=True
 metadata_expire=6h
 REPO
 ```
 
-### 2. Install Zen Browser
+### 3. Install Zen Browser
 ```bash
 sudo dnf clean all
 sudo dnf install -y zen-browser
 ```
 
-### 3. Launch
+### 4. Launch
 ```bash
 zen-browser
 # or simply (symlinks to zen-browser)
@@ -36,6 +42,7 @@ zen
 - 🤖 **Automated**: Weekly builds from upstream releases
 - 📦 **RPM Package**: Proper system integration
 - 🔄 **Auto-Updated**: Tracks latest Zen Browser releases
+- 🔒 **GPG Signed**: Cryptographically signed packages and repository metadata
 - 🖥️ **Desktop Integration**: Application menu, icons, and file associations
 - 🌊 **Wayland Support**: Optimized for modern Linux desktops
 

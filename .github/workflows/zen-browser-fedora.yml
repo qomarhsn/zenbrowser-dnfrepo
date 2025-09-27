@@ -50,7 +50,44 @@ jobs:
         run: |
           dnf -y install \
             rpm-build redhat-rpm-config createrepo_c jq curl xz file \
-            findutils sed tar git which
+            findutils sed tar git which rpm-sign expect gnupg2
+
+      # ------------------------------------------------------------
+      # Import and setup GPG key for signing
+      # ------------------------------------------------------------
+      - name: Import GPG key for signing
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          # Import the private key
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          
+          # Configure GPG for non-interactive use
+          mkdir -p ~/.gnupg
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          echo "use-agent" >> ~/.gnupg/gpg.conf
+          chmod 700 ~/.gnupg
+          chmod 600 ~/.gnupg/gpg.conf
+          
+          # Test the key
+          echo "test" | gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --clearsign > /dev/null
+          
+          echo "GPG key imported and tested successfully"
+
+      # ------------------------------------------------------------
+      # Configure RPM signing macros
+      # ------------------------------------------------------------
+      - name: Configure RPM signing
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.rpmmacros
+          cat > ~/.rpmmacros << EOF
+          %_signature gpg
+          %_gpg_name ${{ secrets.GPG_KEY_ID }}
+          %_gpgbin /usr/bin/gpg
+          %__gpg_sign_cmd %{__gpg} gpg --batch --verbose --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" -u "%{_gpg_name}" -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}
+          EOF
 
       # ------------------------------------------------------------
       # Get latest upstream release tag from GitHub API
@@ -322,6 +359,15 @@ jobs:
           echo "Built RPMs:"
           find work/rpmbuild/RPMS -type f -name "*.rpm" -print
 
+          # Sign all built RPMs
+          echo "Signing RPMs..."
+          for rpm_file in $(find work/rpmbuild/RPMS -name "*.rpm"); do
+            echo "Signing: $rpm_file"
+            rpm --addsign "$rpm_file"
+            # Verify signature
+            rpm -K "$rpm_file"
+          done
+
       # ------------------------------------------------------------
       # Assemble DNF repository and generate metadata
       # ------------------------------------------------------------
@@ -339,6 +385,30 @@ jobs:
           ls -la "$PAGES_DIR"
           echo "repodata:"
           ls -la "$PAGES_DIR/repodata"
+
+      # ------------------------------------------------------------
+      # Sign repository metadata and add public key
+      # ------------------------------------------------------------
+      - name: Sign repository metadata
+        if: steps.check.outputs.no_change == 'false'
+        run: |
+          set -euo pipefail
+          
+          # Export public key to repository (it's already in public/ folder, but regenerate to ensure it matches the signing key)
+          gpg --armor --export ${{ secrets.GPG_KEY_ID }} > "$PAGES_DIR/RPM-GPG-KEY-zen-browser"
+          
+          # Sign repository metadata
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --detach-sign --armor "$PAGES_DIR/repodata/repomd.xml"
+          
+          # Verify the signature
+          gpg --verify "$PAGES_DIR/repodata/repomd.xml.asc" "$PAGES_DIR/repodata/repomd.xml"
+          
+          echo "Repository metadata signed successfully"
+          echo "Repository contents:"
+          ls -la "$PAGES_DIR"
+          echo "Signature file:"
+          ls -la "$PAGES_DIR/repodata/repomd.xml.asc"
 
       # ------------------------------------------------------------
       # Deploy to GitHub Pages
@@ -376,6 +446,11 @@ jobs:
             
             ## Installation
             
+            ### Import GPG Key (Required)
+            ```bash
+            sudo rpm --import https://${{ env.CUSTOM_DOMAIN }}/RPM-GPG-KEY-zen-browser
+            ```
+            
             ### Add repository
             ```bash
             sudo tee /etc/yum.repos.d/zen-browser.repo > /dev/null << 'REPO'
@@ -383,8 +458,9 @@ jobs:
             name=Zen Browser
             baseurl=https://${{ env.CUSTOM_DOMAIN }}/
             enabled=1
-            gpgcheck=0
-            repo_gpgcheck=0
+            gpgcheck=1
+            repo_gpgcheck=1
+            gpgkey=https://${{ env.CUSTOM_DOMAIN }}/RPM-GPG-KEY-zen-browser
             skip_if_unavailable=True
             metadata_expire=6h
             REPO
@@ -396,6 +472,8 @@ jobs:
             sudo dnf update -y
             sudo dnf install -y zen-browser
             ```
+            
+            **🔒 This release includes GPG-signed packages and repository metadata for enhanced security.**
             
             Full instructions: **[zenbrowser-dnfrepo.qomarhsn.com](https://${{ env.CUSTOM_DOMAIN }})**
 

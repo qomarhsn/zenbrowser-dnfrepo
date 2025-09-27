@@ -95,11 +95,14 @@
                 Zen Browser DNF Repository
             </h1>
             <p class="text-lg sm:text-xl text-gray-400">
-                Automated Fedora/RHEL/CentOS package for Zen Browser
+                Automated, GPG-signed Fedora/RHEL/CentOS package for Zen Browser
             </p>
             <div class="mt-4 flex flex-wrap justify-center gap-3">
                 <span class="px-3 py-1 text-sm font-semibold rounded-full bg-sky-600 text-white flex items-center">
                     <i class="fas fa-robot mr-2"></i> Automated
+                </span>
+                <span class="px-3 py-1 text-sm font-semibold rounded-full bg-green-600 text-white flex items-center">
+                    <i class="fas fa-lock mr-2"></i> GPG Signed
                 </span>
                 <span class="px-3 py-1 text-sm font-semibold rounded-full bg-zinc-700 text-gray-300 flex items-center">
                     <i class="fas fa-box-open mr-2"></i> RPM Package
@@ -116,7 +119,7 @@
                 <h2 class="text-3xl font-bold text-sky-400 flex items-center">
                     <i class="fas fa-bolt mr-3"></i> Quick Setup
                 </h2>
-                <p class="text-gray-400 mt-1">Add the repository and install Zen Browser in 3 simple steps</p>
+                <p class="text-gray-400 mt-1">Add the repository and install Zen Browser in 4 simple steps</p>
             </div>
 
             <div class="space-y-6">
@@ -125,6 +128,19 @@
                 <div class="card bg-zinc-800/50 p-4 rounded-lg border border-zinc-700">
                     <h3 class="text-xl font-semibold mb-3 flex items-center text-gray-200">
                         <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">1</span>
+                        Import GPG Key
+                    </h3>
+                    <!-- Code Block uses custom background for contrast -->
+                    <div class="code-block text-sm">
+                        <button class="copy-btn" onclick="copyToClipboard(this, 'gpg-import')">Copy</button>
+                        <pre id="gpg-import">sudo rpm --import https://zenbrowser-dnfrepo.qomarhsn.com/RPM-GPG-KEY-zen-browser</pre>
+                    </div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="card bg-zinc-800/50 p-4 rounded-lg border border-zinc-700">
+                    <h3 class="text-xl font-semibold mb-3 flex items-center text-gray-200">
+                        <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">2</span>
                         Add Repository
                     </h3>
                     <!-- Code Block uses custom background for contrast -->
@@ -135,18 +151,19 @@
 name=Zen Browser
 baseurl=https://zenbrowser-dnfrepo.qomarhsn.com/
 enabled=1
-gpgcheck=0
-repo_gpgcheck=0
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://zenbrowser-dnfrepo.qomarhsn.com/RPM-GPG-KEY-zen-browser
 skip_if_unavailable=True
 metadata_expire=6h
 REPO</pre>
                     </div>
                 </div>
 
-                <!-- Step 2 -->
+                <!-- Step 3 -->
                 <div class="card bg-zinc-800/50 p-4 rounded-lg border border-zinc-700">
                     <h3 class="text-xl font-semibold mb-3 flex items-center text-gray-200">
-                        <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">2</span>
+                        <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">3</span>
                         Install Zen Browser
                     </h3>
                     <div class="code-block text-sm">
@@ -156,10 +173,10 @@ sudo dnf install -y zen-browser</pre>
                     </div>
                 </div>
 
-                <!-- Step 3 -->
+                <!-- Step 4 -->
                 <div class="card bg-zinc-800/50 p-4 rounded-lg border border-zinc-700">
                     <h3 class="text-xl font-semibold mb-3 flex items-center text-gray-200">
-                        <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">3</span>
+                        <span class="step-number w-8 h-8 flex items-center justify-center bg-sky-600 text-white rounded-full font-bold text-sm mr-3 flex-shrink-0">4</span>
                         Launch & Update
                     </h3>
                     <div class="code-block text-sm">
