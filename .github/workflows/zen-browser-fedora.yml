@@ -406,6 +406,14 @@ jobs:
           echo "Checking for key ${{ secrets.GPG_KEY_ID }}:"
           gpg --list-secret-keys ${{ secrets.GPG_KEY_ID }} || echo "Key not found!"
           
+          # Import public key into RPM database for verification
+          echo "Importing public key into RPM database..."
+          gpg --armor --export ${{ secrets.GPG_KEY_ID }} | rpm --import
+          
+          # Show RPM keys for debugging
+          echo "RPM database keys:"
+          rpm -qa gpg-pubkey*
+          
           for rpm_file in $(find work/rpmbuild/RPMS -name "*.rpm"); do
             echo "Signing: $rpm_file"
             # Use rpm --addsign with proper GPG setup
@@ -413,7 +421,7 @@ jobs:
             GNUPGHOME=$HOME/.gnupg \
             rpm --define "_gpg_name ${{ secrets.GPG_KEY_ID }}" \
                 --define "_signature gpg" \
-                --define "__gpg_sign_cmd %{__gpg} gpg --batch --verbose --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 0 -u %{_gpg_name} -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}" \
+                --define "__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 0 -u %{_gpg_name} -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}" \
                 --addsign "$rpm_file"
             
             # Verify signature
