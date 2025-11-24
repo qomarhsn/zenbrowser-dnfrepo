@@ -12,6 +12,7 @@ permissions:
   contents: write # needed to push last_built_version.txt and create releases
   pages: write # needed to deploy to GitHub Pages
   id-token: write # needed by actions/deploy-pages
+  actions: read # needed to access workflow data
 
 env:
   REPO_OWNER: ${{ github.repository_owner }}
@@ -73,9 +74,13 @@ jobs:
           pinentry-mode loopback
           batch
           no-tty
+          no-secmem-warning
           EOF
           chmod 600 ~/.gnupg/gpg.conf
 
+          # Create secure passphrase file (never exposed in logs)
+          echo "${{ secrets.GPG_PASSPHRASE }}" > /tmp/gpg-passphrase
+          chmod 600 /tmp/gpg-passphrase
 
           # Import the private key
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
@@ -84,9 +89,14 @@ jobs:
           FINGERPRINT=$(gpg --list-secret-keys --with-colons ${{ secrets.GPG_KEY_ID }} | grep fpr | head -1 | cut -d: -f10)
           echo "$FINGERPRINT:6:" | gpg --import-ownertrust
 
+          # Verify the key ID matches expected value
+          if ! gpg --list-secret-keys ${{ secrets.GPG_KEY_ID }} > /dev/null 2>&1; then
+            echo "ERROR: GPG key ID ${{ secrets.GPG_KEY_ID }} not found after import"
+            exit 1
+          fi
 
-          # Test the key
-          echo "test" | gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --clearsign > /dev/null
+          # Test the key with secure passphrase file
+          echo "test" | gpg --batch --yes --pinentry-mode loopback --passphrase-file /tmp/gpg-passphrase --clearsign > /dev/null
 
           echo "GPG key imported and tested successfully"
 
@@ -96,12 +106,12 @@ jobs:
       - name: Configure RPM signing
         run: |
           set -euo pipefail
-          # Create .rpmmacros file with proper configuration
+          # Create .rpmmacros file with secure passphrase file reference
           cat > ~/.rpmmacros << EOF
           %_signature gpg
           %_gpg_name ${{ secrets.GPG_KEY_ID }}
           %_gpgbin /usr/bin/gpg
-          %__gpg_sign_cmd %{__gpg} gpg --batch --verbose --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" -u "%{_gpg_name}" -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}
+          %__gpg_sign_cmd %{__gpg} gpg --batch --verbose --no-armor --pinentry-mode loopback --passphrase-file /tmp/gpg-passphrase -u "%{_gpg_name}" -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}
           EOF
 
           # Also set environment variables for rpm command
@@ -278,7 +288,7 @@ jobs:
           Source1:        zen-browser.desktop
           Source2:        zen-browser-launcher.sh
 
-          BuildArch:      BUILDARCH_PLACEHOLDER
+
           Requires:       /bin/bash
           # Ensure zen-browser is installed as the primary launcher
           Provides:       zen-browser
@@ -368,7 +378,6 @@ jobs:
           sed \
             -e "s|RPM_VERSION_PLACEHOLDER|${rpm_version}|g" \
             -e "s|SOURCE_TARBALL_PLACEHOLDER|${asset}|g" \
-            -e "s|BUILDARCH_PLACEHOLDER|${CURRENT_ARCH}|g" \
             "$spec_in" > "$spec_out"
 
           echo "Building RPM for ${CURRENT_ARCH}..."
@@ -393,6 +402,14 @@ jobs:
           mkdir -p $HOME/.gnupg
           chmod 700 $HOME/.gnupg
 
+          # Re-import private key to ensure it exists in this step
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+          # Recreate passphrase file if it doesn't exist (in case of step isolation)
+          if [ ! -f /tmp/gpg-passphrase ]; then
+            echo "${{ secrets.GPG_PASSPHRASE }}" > /tmp/gpg-passphrase
+            chmod 600 /tmp/gpg-passphrase
+          fi
 
           # Import public key into RPM database for verification
           gpg --armor --export ${{ secrets.GPG_KEY_ID }} > /tmp/pubkey.asc
@@ -400,11 +417,11 @@ jobs:
 
           for rpm_file in $(find work/rpmbuild/RPMS -name "*.rpm"); do
             echo "Signing: $rpm_file"
-            # Use rpm --addsign with simpler GPG setup
+            # Use rpm --addsign with secure passphrase file
             GNUPGHOME=$HOME/.gnupg \
             rpm --define "_gpg_name ${{ secrets.GPG_KEY_ID }}" \
                 --define "_signature gpg" \
-                --define "__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase '${{ secrets.GPG_PASSPHRASE }}' -u %{_gpg_name} -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}" \
+                --define "__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --pinentry-mode loopback --passphrase-file /tmp/gpg-passphrase -u %{_gpg_name} -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}" \
                 --addsign "$rpm_file"
             
             # Verify signature
@@ -421,6 +438,21 @@ jobs:
         with:
           name: rpm-${{ env.CURRENT_ARCH }}
           path: work/rpmbuild/RPMS
+
+      # ------------------------------------------------------------
+      # Security cleanup: Remove sensitive data
+      # ------------------------------------------------------------
+      - name: Clean up sensitive data
+        if: always()
+        run: |
+          set -euo pipefail
+          # Remove GPG passphrase file
+          rm -f /tmp/gpg-passphrase
+          # Clean GPG directory
+          rm -rf ~/.gnupg
+          # Clear bash history
+          history -c 2>/dev/null || true
+          echo "Sensitive data cleaned up"
 
   # ------------------------------------------------------------
   # Aggregate RPMs from all architectures, build repo, sign, deploy, release
@@ -449,6 +481,45 @@ jobs:
           set -euo pipefail
           dnf -y install createrepo_c gnupg2 curl jq
 
+      # ------------------------------------------------------------
+      # Import GPG key for metadata signing
+      # ------------------------------------------------------------
+      - name: Import GPG key for metadata signing
+        run: |
+          set -euo pipefail
+          
+          # Configure GPG directory and permissions
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+          
+          # Configure GPG for non-interactive use
+          cat > ~/.gnupg/gpg.conf << EOF
+          pinentry-mode loopback
+          batch
+          no-tty
+          no-secmem-warning
+          EOF
+          chmod 600 ~/.gnupg/gpg.conf
+          
+          # Create secure passphrase file
+          echo "${{ secrets.GPG_PASSPHRASE }}" > /tmp/gpg-passphrase
+          chmod 600 /tmp/gpg-passphrase
+          
+          # Import the private key
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          
+          # Trust the key ultimately
+          FINGERPRINT=$(gpg --list-secret-keys --with-colons ${{ secrets.GPG_KEY_ID }} | grep fpr | head -1 | cut -d: -f10)
+          echo "$FINGERPRINT:6:" | gpg --import-ownertrust
+          
+          # Verify key import
+          if ! gpg --list-secret-keys ${{ secrets.GPG_KEY_ID }} > /dev/null 2>&1; then
+            echo "ERROR: GPG key ID ${{ secrets.GPG_KEY_ID }} not found after import"
+            exit 1
+          fi
+          
+          echo "GPG key imported successfully for metadata signing"
+
       - name: Prepare public repo directory and copy RPMs
         run: |
           set -euo pipefail
@@ -468,11 +539,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Export public key to repository
-          gpg --armor --export ${{ secrets.GPG_KEY_ID }} > "$PAGES_DIR/RPM-GPG-KEY-zen-browser"
+          # Verify the static public key matches our signing secret key
+          # Note: The file public/RPM-GPG-KEY-zen-browser is already in PAGES_DIR after checkout
+          # since PAGES_DIR=public, so no need to copy
+          
+          EXPORTED_FP=$(gpg --armor --export ${{ secrets.GPG_KEY_ID }} | gpg --with-colons --import-options show-only --import 2>/dev/null | grep fpr | head -1 | cut -d: -f10)
+          STATIC_FP=$(gpg --with-colons --import-options show-only --import < "$PAGES_DIR/RPM-GPG-KEY-zen-browser" 2>/dev/null | grep fpr | head -1 | cut -d: -f10)
+          
+          if [ "$EXPORTED_FP" != "$STATIC_FP" ]; then
+            echo "ERROR: Public key mismatch!"
+            echo "Expected fingerprint (from secret): $EXPORTED_FP"
+            echo "Static file fingerprint: $STATIC_FP"
+            exit 1
+          fi
+          echo "Public key verification passed: $EXPORTED_FP"
 
-          # Sign repository metadata
-          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+          # Sign repository metadata using secure passphrase file
+          gpg --batch --yes --pinentry-mode loopback --passphrase-file /tmp/gpg-passphrase \
               --detach-sign --armor "$PAGES_DIR/repodata/repomd.xml"
 
           # Verify the signature
@@ -497,6 +580,21 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
+
+      # ------------------------------------------------------------
+      # Security cleanup: Remove sensitive data
+      # ------------------------------------------------------------
+      - name: Clean up sensitive data
+        if: always()
+        run: |
+          set -euo pipefail
+          # Remove GPG passphrase file
+          rm -f /tmp/gpg-passphrase
+          # Clean GPG directory
+          rm -rf ~/.gnupg
+          # Clear bash history
+          history -c 2>/dev/null || true
+          echo "Sensitive data cleaned up"
 
       - name: Create GitHub Release with instructions
         uses: softprops/action-gh-release@v2

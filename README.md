@@ -58,8 +58,8 @@ zen
 
 ## Architecture
 
-- **Supported**: x86_64
-- **aarch64 (ARM64)**: Dropped for now to ease management
+- **x86_64** (Intel/AMD 64-bit)
+- **aarch64** (ARM64)
 
 ## How It Works
 
@@ -71,10 +71,17 @@ zen
 ## Links
 
 - 🌐 **Website**: [zenbrowser-dnfrepo.qomarhsn.com](https://zenbrowser-dnfrepo.qomarhsn.com)
-- 🔧 **Source Code**: [GitHub Repository](https://github.com/qomarhsn/zenbrowser-dnfrepo)
-- 🚀 **Upstream**: [Zen Browser](https://github.com/zen-browser/desktop)
+- � **Zen Browser**: [Official Project](https://github.com/zen-browser/desktop)
 - ⚙️ **Build Status**: [GitHub Actions](https://github.com/qomarhsn/zenbrowser-dnfrepo/actions)
+
+## License
+
+This repository contains only automation and packaging files (workflows, scripts, web pages). These files are licensed under the MIT License.
+
+> **Note**: This license applies **only to this repository's automation infrastructure** (GitHub Actions workflows, build scripts, HTML/CSS files, etc.). 
+> 
+> **Zen Browser itself** is a separate project licensed under the [Mozilla Public License 2.0 (MPL-2.0)](https://github.com/zen-browser/desktop/blob/main/LICENSE) by the Zen Browser team. This repository merely repackages their releases for Fedora/RHEL/CentOS systems.
 
 ---
 
-**Maintained by**: [Qomarul Hasan](https://github.com/qomarhsn) • **License**: MPL-2.0
+**Maintained by**: [Qomarul Hasan](https://github.com/qomarhsn)
