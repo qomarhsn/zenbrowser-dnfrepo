@@ -4,9 +4,9 @@ on:
   # Manual trigger support
   workflow_dispatch: {}
 
-  # Scheduled: Every Friday 6 AM (UTC+6) = 00:00 UTC on Friday
+  # Scheduled: Every day 6 AM (UTC+6) = 00:00 UTC
   schedule:
-    - cron: "0 0 * * 5"
+    - cron: "0 0 * * *"
 
 permissions:
   contents: write # needed to push last_built_version.txt and create releases
